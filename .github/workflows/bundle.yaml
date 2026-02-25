@@ -1,0 +1,72 @@
+name: Build and Publish OPA Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'policies/**'
+      - '.github/workflows/opa-bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -sL -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa
+          sudo mv opa /usr/local/bin/opa
+
+      - name: Lint policies
+        run: opa check policies/ --strict
+
+      - name: Run tests
+        run: opa test policies/ -v
+
+      - name: Build bundle
+        run: |
+          mkdir -p dist
+          opa build policies/ \
+            --bundle \
+            --output dist/bundle.tar.gz \
+            --optimize 1
+
+      - name: Generate bundle metadata
+        run: |
+          BUNDLE_SHA=$(sha256sum dist/bundle.tar.gz | cut -d' ' -f1)
+          cat > dist/metadata.json <<EOF
+          {
+            "sha256": "${BUNDLE_SHA}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${GITHUB_SHA}",
+            "ref": "${GITHUB_REF_NAME}"
+          }
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
