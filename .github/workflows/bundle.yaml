@@ -40,8 +40,7 @@ jobs:
           mkdir -p dist
           opa build policies/ \
             --bundle \
-            --output dist/bundle.tar.gz \
-            --optimize 1
+            --output dist/bundle.tar.gz
 
       - name: Generate bundle metadata
         run: |
