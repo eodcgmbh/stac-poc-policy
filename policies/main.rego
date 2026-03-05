@@ -1,5 +1,6 @@
 package stac.collections
 
+import future.keywords.contains
 import future.keywords.if
 
 # ─── Identity extraction ────────────────────────────────────────────────────
@@ -25,13 +26,13 @@ filter := {"op": "or", "args": or_args} if {
 
 or_args := [f | f := applicable[_]]
 
-applicable[public_filter]
+applicable contains public_filter
 
-applicable[org_filter] if {
+applicable contains org_filter if {
     org != null
 }
 
-applicable[user_filter] if {
+applicable contains user_filter if {
     user != null
 }
 
