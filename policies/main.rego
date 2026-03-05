@@ -1,34 +1,41 @@
 package stac.collections
 
 import future.keywords.if
-import future.keywords.in
+
+# ─── Identity extraction ────────────────────────────────────────────────────
 
 user := input.payload.preferred_username
 org  := input.payload.organisation
 
+# ─── Top-level filter ───────────────────────────────────────────────────────
+
+# Unauthenticated: public collections only
 filter := public_filter if {
     not input.payload
 }
 
-filter := authed_filter if {
+# Authenticated: OR together whichever branches apply
+filter := {"op": "or", "args": or_args} if {
     input.payload
 }
 
-authed_filter := {"op": "or", "args": or_args}
+# ─── Build OR args via comprehension ────────────────────────────────────────
+# Each partial rule contributes to the set only when its condition holds.
+# This avoids null-bearing branches reaching the cql2 evaluator.
 
-or_args := args if {
-    org  != null
+or_args := [f | f := applicable[_]]
+
+applicable[public_filter]
+
+applicable[org_filter] if {
+    org != null
+}
+
+applicable[user_filter] if {
     user != null
-    args := [public_filter, org_filter, user_filter]
-} else := args if {
-    org  != null
-    user == null
-    args := [public_filter, org_filter]
-} else := args if {
-    org  == null
-    user != null
-    args := [public_filter, user_filter]
-} else := [public_filter]
+}
+
+# ─── Filter fragments ───────────────────────────────────────────────────────
 
 public_filter := {
     "op": "=",
