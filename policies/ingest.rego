@@ -27,12 +27,34 @@ access_metadata_errors contains "access.allowed_users must be a non-empty array 
     count(users) == 0
 }
 
+access_metadata_errors contains "public collections must specify at least one non-empty allowed_organisations or allowed_users" if {
+    input.collection.access.visibility == "public"
+    orgs := object.get(input.collection.access, "allowed_organisations", [])
+    users := object.get(input.collection.access, "allowed_users", [])
+    count(orgs) == 0
+    count(users) == 0
+}
+
+access_metadata_errors contains "context is required" if {
+    not input.context
+}
+
 valid_access_metadata if {
     count(access_metadata_errors) == 0
 }
 
 user_has_access if {
     input.collection.access.visibility == "public"
+    org := object.get(input.context, "organisation", null)
+    org != null
+    org in input.collection.access.allowed_organisations
+}
+
+user_has_access if {
+    input.collection.access.visibility == "public"
+    email := object.get(input.context, "email", null)
+    email != null
+    email in input.collection.access.allowed_users
 }
 
 user_has_access if {
