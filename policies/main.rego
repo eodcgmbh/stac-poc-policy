@@ -7,6 +7,14 @@ import future.keywords.if
 user := input.payload.preferred_username
 org  := input.payload.organisation
 
+# Take the last "@"-part so a local part containing "@" (quoted) can't
+# spoof a domain; usernames without "@" yield no domain at all.
+domain := parts[count(parts) - 1] if {
+    user != null
+    parts := split(user, "@")
+    count(parts) > 1
+}
+
 # Public collections are always visible. The org/user branches only
 # contribute when the request carries the relevant claim; for anonymous
 # requests the proxy sends `payload: null`, so both are undefined here.
@@ -18,6 +26,10 @@ applicable contains org_filter if {
 
 applicable contains user_filter if {
     user != null
+}
+
+applicable contains domain_filter if {
+    domain
 }
 
 or_args := [f | f := applicable[_]]
@@ -63,6 +75,20 @@ user_filter := {
         {
             "op": "a_contains",
             "args": [{"property": "access.allowed_users"}, [user]]
+        }
+    ]
+}
+
+domain_filter := {
+    "op": "and",
+    "args": [
+        {
+            "op": "=",
+            "args": [{"property": "access.visibility"}, "domain"]
+        },
+        {
+            "op": "a_contains",
+            "args": [{"property": "access.allowed_domains"}, [domain]]
         }
     ]
 }
