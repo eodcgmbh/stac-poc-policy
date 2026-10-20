@@ -2,37 +2,65 @@ package stac.collections
 
 import future.keywords.contains
 import future.keywords.if
+import future.keywords.in
 
 
-user := input.payload.preferred_username
-org  := input.payload.organisation
+org := input.payload.organisation
+
+email := input.payload.email if {
+    input.payload.email_verified == true
+}
 
 # Take the last "@"-part so a local part containing "@" (quoted) can't
-# spoof a domain; usernames without "@" yield no domain at all.
+# spoof a domain; emails without "@" yield no domain at all.
 domain := parts[count(parts) - 1] if {
-    user != null
-    parts := split(user, "@")
+    parts := split(email, "@")
     count(parts) > 1
+}
+
+is_write if {
+    not upper(object.get(object.get(input, "req", {}), "method", "GET")) in {"GET", "HEAD", "OPTIONS"}
 }
 
 # Public collections are always visible. The org/user branches only
 # contribute when the request carries the relevant claim; for anonymous
 # requests the proxy sends `payload: null`, so both are undefined here.
-applicable contains public_filter
+applicable contains public_filter if {
+    not is_write
+}
 
 applicable contains org_filter if {
     org != null
 }
 
 applicable contains user_filter if {
-    user != null
+    email
 }
 
 applicable contains domain_filter if {
     domain
 }
 
+applicable contains public_owner_filter("allowed_organisations", org) if {
+    is_write
+    org != null
+}
+
+applicable contains public_owner_filter("allowed_users", email) if {
+    is_write
+    email
+}
+
+applicable contains public_owner_filter("allowed_domains", domain) if {
+    is_write
+    domain
+}
+
 or_args := [f | f := applicable[_]]
+
+filter := deny_filter if {
+    count(or_args) == 0
+}
 
 # A single applicable branch is emitted as-is. CQL2-JSON requires `or` to
 # have >= 2 args, so a 1-arg `or` is rejected by the cql2 evaluator. This
@@ -46,49 +74,51 @@ filter := {"op": "or", "args": or_args} if {
     count(or_args) > 1
 }
 
-public_filter := {
-    "op": "=",
-    "args": [{"property": "access.visibility"}, "public"]
+deny_filter := {"op": "=", "args": [1, 0]}
+
+public_owner_filter(list, value) := {
+    "op": "and",
+    "args": [public_filter, contains_value(list, value)]
 }
+
+visibility_is(value) := {
+    "op": "and",
+    "args": [
+        {"op": "not", "args": [{"op": "isNull", "args": [{"property": "access.visibility"}]}]},
+        {"op": "=", "args": [{"property": "access.visibility"}, value]}
+    ]
+}
+
+contains_value(list, value) := {
+    "op": "and",
+    "args": [
+        {"op": "not", "args": [{"op": "isNull", "args": [{"property": sprintf("access.%s", [list])}]}]},
+        {"op": "a_contains", "args": [{"property": sprintf("access.%s", [list])}, [value]]}
+    ]
+}
+
+public_filter := visibility_is("public")
 
 org_filter := {
     "op": "and",
     "args": [
-        {
-            "op": "=",
-            "args": [{"property": "access.visibility"}, "organisation"]
-        },
-        {
-            "op": "a_contains",
-            "args": [{"property": "access.allowed_organisations"}, [org]]
-        }
+        visibility_is("organisation"),
+        contains_value("allowed_organisations", org)
     ]
 }
 
 user_filter := {
     "op": "and",
     "args": [
-        {
-            "op": "=",
-            "args": [{"property": "access.visibility"}, "user"]
-        },
-        {
-            "op": "a_contains",
-            "args": [{"property": "access.allowed_users"}, [user]]
-        }
+        visibility_is("user"),
+        contains_value("allowed_users", email)
     ]
 }
 
 domain_filter := {
     "op": "and",
     "args": [
-        {
-            "op": "=",
-            "args": [{"property": "access.visibility"}, "domain"]
-        },
-        {
-            "op": "a_contains",
-            "args": [{"property": "access.allowed_domains"}, [domain]]
-        }
+        visibility_is("domain"),
+        contains_value("allowed_domains", domain)
     ]
 }

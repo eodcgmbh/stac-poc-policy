@@ -23,7 +23,7 @@ test_authenticated_without_claims if {
 
 # A single applicable branch is never wrapped in `or`.
 test_single_branch_is_not_wrapped_in_or if {
-	collections.filter.op == "=" with input as {"payload": null}
+	collections.filter.op != "or" with input as {"payload": null}
 }
 
 # Org claim -> OR of org + public (2 args).
@@ -33,24 +33,39 @@ test_org_claim_combines_with_public if {
 	count(f.args) == 2
 }
 
-# Full claims -> OR of org + user + public (3 args).
+# Full claims -> OR of org + user + domain + public (4 args).
 test_full_claims_combine_all_branches if {
-	f := collections.filter with input as {"payload": {"preferred_username": "alice", "organisation": "eodc"}}
-	f.op == "or"
-	count(f.args) == 3
-}
-
-# Email-style username additionally enables the domain branch (4 args).
-test_email_username_adds_domain_branch if {
-	f := collections.filter with input as {"payload": {"preferred_username": "alice@eodc.eu", "organisation": "eodc"}}
+	f := collections.filter with input as {"payload": {"email": "alice@eodc.eu", "email_verified": true, "organisation": "eodc"}}
 	f.op == "or"
 	count(f.args) == 4
-	collections.domain == "eodc.eu" with input as {"payload": {"preferred_username": "alice@eodc.eu"}}
+	collections.domain == "eodc.eu" with input as {"payload": {"email": "alice@eodc.eu", "email_verified": true}}
 }
 
-# Username without "@" must not produce a domain branch: public + user only.
-test_non_email_username_has_no_domain_branch if {
-	f := collections.filter with input as {"payload": {"preferred_username": "alice"}}
+test_unverified_email_is_ignored if {
+	collections.filter == collections.public_filter with input as {"payload": {"email": "alice@eodc.eu", "email_verified": false}}
+}
+
+test_username_does_not_grant_user_or_domain if {
+	collections.filter == collections.public_filter with input as {"payload": {"preferred_username": "alice@eodc.eu"}}
+}
+
+test_get_with_req_is_read if {
+	collections.filter == collections.public_filter with input as {"req": {"method": "GET"}, "payload": null}
+}
+
+test_write_without_claims_is_denied if {
+	collections.filter == collections.deny_filter with input as {"req": {"method": "POST"}, "payload": {"sub": "x"}}
+}
+
+test_write_drops_unconditional_public if {
+	f := collections.filter with input as {"req": {"method": "DELETE"}, "payload": {"organisation": "eodc"}}
+	f.op == "or"
 	count(f.args) == 2
-	count([a | a := f.args[_]; {"op": "=", "args": [{"property": "access.visibility"}, "domain"]} in a.args]) == 0
+	not collections.public_filter in f.args
+}
+
+test_write_domain_owner_branch if {
+	f := collections.filter with input as {"req": {"method": "PUT"}, "payload": {"email": "christoph@geosphere.at", "email_verified": true}}
+	collections.public_owner_filter("allowed_domains", "geosphere.at") in f.args
+	collections.public_owner_filter("allowed_users", "christoph@geosphere.at") in f.args
 }
