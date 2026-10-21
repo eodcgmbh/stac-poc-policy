@@ -1,0 +1,50 @@
+services:
+  db:
+    image: ghcr.io/stac-utils/pgstac:v0.9.8
+    environment:
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgis
+      PGUSER: username
+      PGPASSWORD: password
+      PGDATABASE: postgis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U username -d postgis && psql -U username -d postgis -tc \"select 1 from pg_namespace where nspname='pgstac'\" | grep -q 1"]
+      interval: 3s
+      retries: 60
+  stac:
+    image: ghcr.io/stac-utils/stac-fastapi-pgstac:6.2.0
+    command: ["uvicorn", "stac_fastapi.pgstac.app:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: username
+      PGPASSWORD: password
+      PGDATABASE: postgis
+      ENABLED_EXTENSIONS: "filter,query,sort,fields,pagination,transaction,collection_search"
+      ENABLE_TRANSACTIONS_EXTENSIONS: "true"
+    depends_on:
+      db: {condition: service_healthy}
+  opa:
+    image: openpolicyagent/opa:1.13.1
+    command: ["run", "--server", "--addr=:8181", "/policies"]
+    environment:
+      STAC_UPSTREAM_URL: http://stac:8080
+    volumes:
+      - ../policies:/policies:ro
+  oidc:
+    build: ./oidc
+  proxy:
+    image: ghcr.io/developmentseed/stac-auth-proxy:v1.3.0
+    environment:
+      UPSTREAM_URL: http://stac:8080
+      OIDC_DISCOVERY_URL: http://oidc:8000/.well-known/openid-configuration
+      UPSTREAM_TIMEOUT: "120"
+      DEFAULT_PUBLIC: "true"
+      COLLECTIONS_FILTER_CLS: stac_auth_proxy.filters:Opa
+      COLLECTIONS_FILTER_ARGS: '["http://opa:8181", "stac/collections/filter"]'
+      ITEMS_FILTER_CLS: stac_auth_proxy.filters:Opa
+      ITEMS_FILTER_ARGS: '["http://opa:8181", "stac/items/filter"]'
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on: [stac, opa, oidc]
