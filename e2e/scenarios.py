@@ -139,5 +139,25 @@ check("owner DELETEs public item", call("DELETE", "/collections/public/items/pub
 check("other user cannot DELETE restricted collection", call("DELETE", "/collections/restricted", other)[0], 403, 404)
 check("member DELETEs restricted collection", call("DELETE", "/collections/restricted", member)[0], 200, 204)
 
+group_member = token({"email": "g@example.org", "email_verified": True, "groups": ["/services/data-access/bfw"]})
+outsider = token({"email": "o@example.org", "email_verified": True, "groups": ["/openstack_projects/bfw", "/services/data-access/__data-access-admin__"]})
+GROUP = {"visibility": "group", "allowed_groups": ["bfw"]}
+GROUP_OWNED = {"visibility": "public", "allowed_groups": ["bfw"]}
+
+check("group member creates group collection", call("POST", "/collections", group_member, collection("grp", GROUP))[0], 200, 201)
+check("group member creates public group-owned collection", call("POST", "/collections", group_member, collection("grp-owned", GROUP_OWNED))[0], 200, 201)
+check("outsider cannot create group-owned collection", call("POST", "/collections", outsider, collection("grp-x", GROUP_OWNED))[0], 403)
+check("anonymous does not see group collection", ids(call("GET", "/collections")), ["grp-owned", "public", "unowned"])
+check("group member sees group collection", ids(call("GET", "/collections", group_member)), ["grp", "grp-owned", "public", "unowned"])
+check("outsider with other groups does not see it", call("GET", "/collections/grp", outsider)[0], 404)
+check("group member bulk-inserts into group collection", call("POST", "/collections/grp/bulk_items", group_member, {"items": {"grp-0001": item("grp", 1)}, "method": "insert"})[0], 200)
+check("outsider cannot insert into group collection", call("POST", "/collections/grp/items", outsider, item("grp", 2))[0], 403, 404)
+time.sleep(6)
+check("anonymous gets no group items via search", feature_count(call("POST", "/search", None, {"limit": 200, "collections": ["grp"]})), 0)
+check("group member finds group items via search", feature_count(call("POST", "/search", group_member, {"limit": 200, "collections": ["grp"]})), 1)
+check("group member updates group-owned public collection", call("PUT", "/collections/grp-owned", group_member, collection("grp-owned", GROUP_OWNED))[0], 200)
+check("outsider cannot update group-owned public collection", call("PUT", "/collections/grp-owned", outsider, collection("grp-owned", GROUP_OWNED))[0], 403, 404)
+check("group member deletes group collection", call("DELETE", "/collections/grp", group_member)[0], 200, 204)
+
 print(f"\n{sum(results)}/{len(results)} passed")
 sys.exit(0 if all(results) else 1)

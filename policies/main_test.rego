@@ -69,3 +69,23 @@ test_write_domain_owner_branch if {
 	collections.public_owner_filter("allowed_domains", "geosphere.at") in f.args
 	collections.public_owner_filter("allowed_users", "christoph@geosphere.at") in f.args
 }
+
+test_data_access_groups_are_extracted if {
+	collections.groups == ["bfw", "maap"] with input as {"payload": {"groups": ["/services/data-access/maap", "/openstack_projects/x", "/services/data-access/bfw", "/services/data-access/"]}}
+}
+
+test_group_member_sees_group_collections if {
+	f := collections.filter with input as {"payload": {"groups": ["/services/data-access/bfw"]}}
+	collections.group_filter in f.args with input as {"payload": {"groups": ["/services/data-access/bfw"]}}
+	collections.public_filter in f.args
+}
+
+test_other_groups_are_ignored if {
+	collections.filter == collections.public_filter with input as {"payload": {"groups": ["/openstack_projects/bfw", "/eodc"]}}
+}
+
+test_group_member_may_write_public_group_owned if {
+	f := collections.filter with input as {"req": {"method": "PUT"}, "payload": {"groups": ["/services/data-access/bfw"]}}
+	collections.public_group_owner_filter in f.args with input as {"req": {"method": "PUT"}, "payload": {"groups": ["/services/data-access/bfw"]}}
+	not collections.public_filter in f.args
+}

@@ -72,3 +72,38 @@ test_post_search_is_a_read if {
 		with http.send as mock_send
 	f == {"op": "in", "args": [{"property": "collection"}, ["ara", "bfw"]]}
 }
+
+grp := {"id": "grp", "access": {"visibility": "group", "allowed_groups": ["bfw"]}}
+
+owned := {"id": "owned", "access": {"visibility": "public", "allowed_groups": ["bfw"]}}
+
+mock_send_groups(request) := {"status_code": 200, "body": {"collections": [ara, grp, owned]}} if {
+	contains(request.url, "/collections?")
+}
+
+mock_send_groups(request) := {"status_code": 200, "body": grp} if endswith(request.url, "/collections/grp")
+
+mock_send_groups(request) := {"status_code": 200, "body": owned} if endswith(request.url, "/collections/owned")
+
+bfw_member := {"groups": ["/services/data-access/bfw"]}
+
+test_group_member_reads_group_items if {
+	items.filter == items.allow_filter with input as {"req": req("GET", "/collections/grp/items", "grp"), "payload": bfw_member}
+		with http.send as mock_send_groups
+}
+
+test_non_member_cannot_read_group_items if {
+	items.filter == {"op": "=", "args": [1, 0]} with input as {"req": req("GET", "/collections/grp/items", "grp"), "payload": eodc}
+		with http.send as mock_send_groups
+}
+
+test_group_member_writes_group_owned_public if {
+	items.filter == items.allow_filter with input as {"req": req("POST", "/collections/owned/bulk_items", "owned"), "payload": bfw_member}
+		with http.send as mock_send_groups
+}
+
+test_group_search_includes_group_collections if {
+	f := items.filter with input as {"req": {"method": "GET", "path": "/search", "path_params": {}}, "payload": bfw_member}
+		with http.send as mock_send_groups
+	f == {"op": "in", "args": [{"property": "collection"}, ["ara", "grp", "owned"]]}
+}
