@@ -38,6 +38,12 @@ member(col) if {
 	collections.domain in access_list(col, "allowed_domains")
 }
 
+member(col) if {
+	visibility(col) == "group"
+	some g in access_list(col, "allowed_groups")
+	g in collections.groups
+}
+
 can_read(col) if visibility(col) == "public"
 
 can_read(col) if member(col)
@@ -58,6 +64,12 @@ can_write(col) if {
 can_write(col) if {
 	visibility(col) == "public"
 	collections.domain in access_list(col, "allowed_domains")
+}
+
+can_write(col) if {
+	visibility(col) == "public"
+	some g in access_list(col, "allowed_groups")
+	g in collections.groups
 }
 
 target := response.body if {

@@ -18,6 +18,16 @@ domain := parts[count(parts) - 1] if {
     count(parts) > 1
 }
 
+group_prefix := "/services/data-access/"
+
+groups := sort([name |
+    some g in object.get(input, ["payload", "groups"], [])
+    is_string(g)
+    startswith(g, group_prefix)
+    name := substring(g, count(group_prefix), -1)
+    name != ""
+])
+
 is_write if {
     not upper(object.get(object.get(input, "req", {}), "method", "GET")) in {"GET", "HEAD", "OPTIONS"}
 }
@@ -39,6 +49,15 @@ applicable contains user_filter if {
 
 applicable contains domain_filter if {
     domain
+}
+
+applicable contains group_filter if {
+    count(groups) > 0
+}
+
+applicable contains public_group_owner_filter if {
+    is_write
+    count(groups) > 0
 }
 
 applicable contains public_owner_filter("allowed_organisations", org) if {
@@ -97,6 +116,14 @@ contains_value(list, value) := {
     ]
 }
 
+overlaps_values(list, values) := {
+    "op": "and",
+    "args": [
+        {"op": "not", "args": [{"op": "isNull", "args": [{"property": sprintf("access.%s", [list])}]}]},
+        {"op": "a_overlaps", "args": [{"property": sprintf("access.%s", [list])}, values]}
+    ]
+}
+
 public_filter := visibility_is("public")
 
 org_filter := {
@@ -121,4 +148,17 @@ domain_filter := {
         visibility_is("domain"),
         contains_value("allowed_domains", domain)
     ]
+}
+
+group_filter := {
+    "op": "and",
+    "args": [
+        visibility_is("group"),
+        overlaps_values("allowed_groups", groups)
+    ]
+}
+
+public_group_owner_filter := {
+    "op": "and",
+    "args": [public_filter, overlaps_values("allowed_groups", groups)]
 }
