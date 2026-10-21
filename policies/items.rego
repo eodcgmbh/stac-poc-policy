@@ -74,7 +74,7 @@ all_collections := response.body.collections if {
 		"method": "GET",
 		"url": sprintf("%s/collections?limit=10000", [upstream]),
 		"force_cache": true,
-		"force_cache_duration_seconds": 30,
+		"force_cache_duration_seconds": 5,
 		"raise_error": false,
 	})
 	response.status_code == 200
